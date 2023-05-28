@@ -2,8 +2,10 @@ package main
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/mattn/go-sqlite3"
@@ -22,6 +24,7 @@ func main() {
 	defer db.Close()
 
 	db.Exec("CREATE TABLE IF NOT EXISTS users (user_id TEXT, password TEXT)")
+	db.Exec("CREATE TABLE IF NOT EXISTS user_info (user_id TEXT, nickname TEXT, comment TEXT)")
 
 	r := gin.Default()
 
@@ -73,6 +76,49 @@ func main() {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"message": "Account successfully created", "user": gin.H{"user_id": newUser.UserId, "nickname": newUser.UserId}})
+	})
+
+	r.GET("/users/:user_id", func(c *gin.Context) {
+		requestUserId := c.Param("user_id")
+		auth := c.GetHeader("Authorization")
+
+		if auth == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Authentication Failed"})
+			return
+		}
+
+		auths := strings.SplitN(auth, " ", 2)
+		if len(auths) != 2 || auths[0] != "Basic" {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Authentication Failed"})
+			return
+		}
+
+		payload, _ := base64.StdEncoding.DecodeString(auths[1])
+		pair := strings.SplitN(string(payload), ":", 2)
+
+		if len(pair) != 2 || pair[0] != requestUserId {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Authentication Failed"})
+			return
+		}
+
+		var user User
+		db.QueryRow("SELECT * FROM users WHERE user_id=? AND password=?", pair[0], pair[1]).Scan(&user.UserId, &user.Password)
+		if user.UserId == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Authentication Failed"})
+			return
+		}
+
+		var nickname, comment string
+		db.QueryRow("SELECT nickname, comment FROM user_info WHERE user_id=?", requestUserId).Scan(&nickname, &comment)
+		if nickname == "" {
+			nickname = requestUserId
+		}
+
+		if comment == "" {
+			c.JSON(http.StatusOK, gin.H{"message": "User details by user_id", "user": gin.H{"user_id": requestUserId, "nickname": nickname}})
+		} else {
+			c.JSON(http.StatusOK, gin.H{"message": "User details by user_id", "user": gin.H{"user_id": requestUserId, "nickname": nickname, "comment": comment}})
+		}
 	})
 
 	r.Run()
