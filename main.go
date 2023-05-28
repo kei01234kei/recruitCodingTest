@@ -1,9 +1,12 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
+	"database/sql"
 	"net/http"
 	"regexp"
+
+	"github.com/gin-gonic/gin"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type User struct {
@@ -11,9 +14,15 @@ type User struct {
 	Password string `json:"password"`
 }
 
-var userStore = make(map[string]User)
-
 func main() {
+	db, err := sql.Open("sqlite3", "./user.db")
+	if err != nil {
+		panic("failed to connect database")
+	}
+	defer db.Close()
+
+	db.Exec("CREATE TABLE IF NOT EXISTS users (user_id TEXT, password TEXT)")
+
 	r := gin.Default()
 
 	r.POST("/signup", func(c *gin.Context) {
@@ -50,12 +59,19 @@ func main() {
 			return
 		}
 
-		if _, exists := userStore[newUser.UserId]; exists {
+		var user User
+		db.QueryRow("SELECT * FROM users WHERE user_id=?", newUser.UserId).Scan(&user.UserId, &user.Password)
+		if user.UserId != "" {
 			c.JSON(http.StatusConflict, gin.H{"message": "Account creation failed", "cause": "already same user_id is used"})
 			return
 		}
 
-		userStore[newUser.UserId] = newUser
+		_, err = db.Exec("INSERT INTO users (user_id, password) VALUES (?, ?)", newUser.UserId, newUser.Password)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Account creation failed", "cause": "failed to insert user to database"})
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{"message": "Account successfully created", "user": gin.H{"user_id": newUser.UserId, "nickname": newUser.UserId}})
 	})
 
