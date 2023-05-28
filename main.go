@@ -7,8 +7,8 @@ import (
 )
 
 type User struct {
-	UserId   string `json:"user_id" binding:"required,min=6,max=20"`
-	Password string `json:"password" binding:"required,min=8,max=20"`
+	UserId   string `json:"user_id"`
+	Password string `json:"password"`
 }
 
 var userStore = make(map[string]User)
@@ -19,7 +19,22 @@ func main() {
 	r.POST("/signup", func(c *gin.Context) {
 		var newUser User
 		if err := c.ShouldBindJSON(&newUser); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"message": "Account creation failed", "cause": "invalid format"})
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Account creation failed", "cause": "invalid request body"})
+			return
+		}
+
+		if newUser.UserId == "" || newUser.Password == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Account creation failed", "cause": "required user_id and password"})
+			return
+		}
+
+		if len(newUser.UserId) < 6 || len(newUser.UserId) > 20 {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Account creation failed", "cause": "user_id should be between 6 and 20 characters"})
+			return
+		}
+
+		if len(newUser.Password) < 8 || len(newUser.Password) > 20 {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Account creation failed", "cause": "password should be between 8 and 20 characters"})
 			return
 		}
 
